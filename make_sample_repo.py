@@ -16,12 +16,14 @@ import argparse
 
 _ap = argparse.ArgumentParser()
 _ap.add_argument("target", nargs="?", default="sample-repo")
+_ap.add_argument("--force", action="store_true", help="replace target if it already exists")
 _ap.add_argument("--scenario", choices=["easy", "hard"], default="easy",
                  help="easy: one-character regression. hard: one big refactor commit "
                       "hiding TWO regressions, plus a later feature that depends on it.")
 _args = _ap.parse_args()
 TARGET = _args.target
 SCENARIO = _args.scenario
+FORCE = _args.force
 
 # ---- small utility functions: (name, code, test) --------------------------
 UTILS = {
@@ -362,7 +364,11 @@ def run(*args):
 
 def main():
     if os.path.exists(TARGET):
-        sys.exit("%s already exists. Delete it or pick another folder." % TARGET)
+        if FORCE:
+            import shutil
+            shutil.rmtree(TARGET)
+        else:
+            sys.exit("%s already exists. Delete it or pick another folder." % TARGET)
     os.makedirs(TARGET)
     run("git", "init", "-q")
     run("git", "config", "user.name", "Sample Dev")
