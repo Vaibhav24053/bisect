@@ -54,7 +54,11 @@ def parallel_search(repo, commits, workers, cmd, timeout, emit):
         with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(run_one, repo, commits[i], cmd, timeout): i for i in probes}
             for f in as_completed(futs):
-                i, r = futs[f], f.result()
+                i = futs[f]
+                try:
+                    r = f.result()
+                except Exception as e:
+                    r = {"status": "error", "secs": 0, "output": str(e)}
                 results[i] = r
                 emit(type="probe_result", round=rounds, index=i, status=r["status"], secs=round(r["secs"], 2))
         runs += len(probes)
