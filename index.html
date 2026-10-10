@@ -363,10 +363,10 @@ function laneFor(i,n){
 function buildGraph(n, workers){
   lanes = Array.from({length:n},(_,i)=>laneFor(i,n));
   const maxLane = Math.max(...lanes,0);
-  const W = PAD*2 + (n-1)*DX, H = NEB_Y + 30 + Y0 + maxLane*LANE + 26;
+  const displayN = Math.max(n, 8); const W = PAD*2 + (displayN-1)*DX, H = NEB_Y + 30 + Y0 + maxLane*LANE + 26;
   const svg = $("#graphSvg"); svg.setAttribute("viewBox", "0 0 "+W+" "+H); svg.innerHTML="";
   const g = svgEl("g",{id:"gview"}); svg.appendChild(g);
-  const pos = i => ({x: PAD+i*DX, y: Y0+lanes[i]*LANE});
+  const pos = i => ({x: n <= 1 ? W/2 : PAD+i*((W-PAD*2)/Math.max(1,n-1)), y: Y0+lanes[i]*LANE});
 
   // compute-slot fan lines + squares (decorative, sized to real worker count)
   const cx=W/2, cy=NEB_Y+8;
