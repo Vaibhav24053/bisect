@@ -21,13 +21,26 @@ import os
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
 import pipeline
 
 HERE = Path(__file__).parent
 app = FastAPI()
+
+# The frontend may be hosted on a different domain (e.g. Vercel) than this
+# backend (e.g. Render), so browsers need explicit permission to call across
+# origins. Set ALLOWED_ORIGIN to your deployed frontend's exact URL once you
+# have it; "*" below is fine for getting things working first.
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[ALLOWED_ORIGIN] if ALLOWED_ORIGIN != "*" else ["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 # Allow-list of repos the web UI may run. This is deliberate: a public demo
 # must NEVER accept an arbitrary path or URL from the browser and run it,
@@ -51,8 +64,19 @@ def list_repos():
     return [{"id": k, "label": v, "exists": (HERE / k).is_dir()} for k, v in REPOS.items()]
 
 
+import time
+_last_run_by_ip: dict = {}
+RUN_COOLDOWN_SECS = int(os.environ.get("RUN_COOLDOWN_SECS", 60))
+
+
 @app.get("/api/run")
-async def run(repo: str):
+async def run(repo: str, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    last = _last_run_by_ip.get(ip, 0)
+    if now - last < RUN_COOLDOWN_SECS:
+        raise HTTPException(429, "Please wait %ds between runs." % int(RUN_COOLDOWN_SECS - (now - last)))
+    _last_run_by_ip[ip] = now
     if repo not in REPOS:
         raise HTTPException(400, "unknown repo %r (see /api/repos)" % repo)
     path = HERE / repo
@@ -92,4 +116,4 @@ async def run(repo: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
