@@ -1,0 +1,21 @@
+[
+  {
+    "n": 1,
+    "model": "nvidia/Nemotron-3_5-Lightning",
+    "explanation": "Two bugs were introduced in commit 19d27bd:\n\n1. **`shop/discounts.py`**: The bulk discount threshold changed from `qty >= BULK_THRESHOLD` to `qty > BULK_THRESHOLD`, so `bulk_discount(10, 100.0)` now returns 0.0 instead of 100.0, failing `test_bulk_discount_at_threshold`.\n\n2. **`shop/checkout.py`**: `order_total` now applies tax per-line via `line_total` and then sums, rather than applying tax once to the total gross minus discounts. This causes `test_order_total_rounds_tax_once` to fail (0.36 vs expected 0.35) because tax gets rounded three times instead of once.\n\nThe fixes are: (a) change `qty > BULK_THRESHOLD` back to `qty >= BULK_THRESHOLD` in `bulk_discount`, and (b) restore the original `order_total` logic that applies `with_tax` once to the subtotal minus total discount.",
+    "edits": [
+      {
+        "path": "shop/discounts.py",
+        "old": "if qty > BULK_THRESHOLD:",
+        "new": "if qty >= BULK_THRESHOLD:"
+      },
+      {
+        "path": "shop/checkout.py",
+        "old": "from shop.pricing import with_tax\nfrom shop.discounts import bulk_discount\n\n\ndef line_total(line):\n    \"\"\"Taxed total for one cart line.\"\"\"\n    base = line[\"price\"] * line[\"qty\"]\n    return with_tax(round(base - bulk_discount(line[\"qty\"], line[\"price\"]), 2))\n\n\ndef order_total(lines):\n    return round(sum(line_total(l) for l in lines), 2)",
+        "new": "from shop.pricing import subtotal, with_tax\nfrom shop.discounts import bulk_discount\n\n\ndef line_total(line):\n    \"\"\"Taxed total for one cart line.\"\"\"\n    base = line[\"price\"] * line[\"qty\"]\n    return with_tax(round(base - bulk_discount(line[\"qty\"], line[\"price\"]), 2))\n\n\ndef order_total(lines):\n    gross = subtotal(lines)\n    off = sum(bulk_discount(l[\"qty\"], l[\"price\"]) for l in lines)\n    return with_tax(round(gross - off, 2))"
+      }
+    ],
+    "exit_code": 0,
+    "test_output_tail": ".......................                                                  [100%]\n23 passed in 0.05s\n"
+  }
+]

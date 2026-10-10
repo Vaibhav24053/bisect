@@ -1,0 +1,16 @@
+[
+  {
+    "n": 1,
+    "model": "nvidia/Nemotron-3_5-Lightning",
+    "explanation": "The commit changed the bulk discount threshold condition from `>=` to `>`, making it \"more than 10\" instead of \"10 or more\". The test `test_bulk_discount_at_threshold` expects that exactly 10 units of a $100 item yields a $100 discount (10% of $1000). Restoring the `>=` operator fixes the test while keeping all other behavior intact.",
+    "edits": [
+      {
+        "path": "shop/discounts.py",
+        "old": "if qty > BULK_THRESHOLD:",
+        "new": "if qty >= BULK_THRESHOLD:"
+      }
+    ],
+    "exit_code": 0,
+    "test_output_tail": ".....................                                                    [100%]\n21 passed in 0.02s\n"
+  }
+]

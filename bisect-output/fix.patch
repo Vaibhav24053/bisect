@@ -1,0 +1,31 @@
+diff --git a/shop/checkout.py b/shop/checkout.py
+index aa1f7a7..6807cff 100644
+--- a/shop/checkout.py
++++ b/shop/checkout.py
+@@ -1,4 +1,4 @@
+-from shop.pricing import with_tax
++from shop.pricing import subtotal, with_tax
+ from shop.discounts import bulk_discount
+ 
+ 
+@@ -9,4 +9,6 @@ def line_total(line):
+ 
+ 
+ def order_total(lines):
+-    return round(sum(line_total(l) for l in lines), 2)
++    gross = subtotal(lines)
++    off = sum(bulk_discount(l["qty"], l["price"]) for l in lines)
++    return with_tax(round(gross - off, 2))
+diff --git a/shop/discounts.py b/shop/discounts.py
+index 09bfcf8..53478a1 100644
+--- a/shop/discounts.py
++++ b/shop/discounts.py
+@@ -13,7 +13,7 @@ def _pct(amount, rate):
+ 
+ 
+ def bulk_discount(qty, unit_price):
+-    if qty > BULK_THRESHOLD:
++    if qty >= BULK_THRESHOLD:
+         return _pct(qty * unit_price, BULK_RATE)
+     return 0.0
+ 
