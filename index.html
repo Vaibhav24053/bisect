@@ -636,7 +636,12 @@ $("#file").onchange=e=>{
 };
 
 /* ---- live mode: talk to the local/hosted backend over SSE ---- */
-fetch("/api/repos").then(r=>r.json()).then(repos=>{
+/* Set this to your deployed backend's URL, e.g. "https://bisect-abc.onrender.com"
+   Leave empty ("") when the page is served BY that same backend (server.py's "/"
+   route) — that's the simplest setup and needs no change here. */
+const API_BASE = "";
+
+fetch(API_BASE+"/api/repos").then(r=>r.json()).then(repos=>{
   const sel=$("#liveRepo"); sel.innerHTML="";
   if(!repos.length){ sel.innerHTML='<option value="">No repos configured on the server</option>'; return; }
   repos.forEach(r=>{ const o=document.createElement("option"); o.value=r.id; o.textContent=r.label+(r.exists?"":" (missing on server)"); sel.appendChild(o); });
@@ -646,7 +651,7 @@ function playLive(repo){
   resetDash(); counts={run:0,pass:0,fail:0,error:0}; jobCounter=1000;
   showDash();
   $("#liveHint").textContent="Connecting to the backend and starting a real run on "+repo+" ...";
-  const es = new EventSource("/api/run?repo="+encodeURIComponent(repo));
+  const es = new EventSource(API_BASE+"/api/run?repo="+encodeURIComponent(repo));
   window._liveSource = es;
   es.onmessage = e=>{ const ev=JSON.parse(e.data); if(ev.type==="server_error"){ log("server error: "+ev.error,"bad"); es.close(); return; } handle(ev); if(ev.type==="done") es.close(); };
   es.onerror = ()=>{ log("connection to backend lost or finished","warn"); es.close(); };
