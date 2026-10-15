@@ -520,13 +520,28 @@ function resetDash(){
 }
 
 let counts={run:0,pass:0,fail:0,error:0};
-function refreshCounts(total){
-  $("#sRun").textContent=counts.run; $("#sPass").textContent=counts.pass; $("#sFail").textContent=counts.fail+counts.error;
-  $("#sQueue").textContent=Math.max(0,total-counts.run-counts.pass-counts.fail-counts.error);
-  const done=counts.pass+counts.fail+counts.error;
-  $("#pbar").style.width=Math.min(100,(done/total)*100)+"%";
-  $("#clusterActive").textContent="● NEBIUS — "+counts.run+" active";
+
+function refreshCounts(total) {
+  $("#sRun").textContent = counts.run;
+  $("#sPass").textContent = counts.pass;
+  $("#sFail").textContent = counts.fail + counts.error;
+
+  $("#sQueue").textContent = Math.max(
+    0,
+    total - counts.run - counts.pass - counts.fail - counts.error
+  );
+
+  const done = counts.pass + counts.fail + counts.error;
+  $("#pbar").style.width =
+    Math.min(100, (done / total) * 100) + "%";
+
+  const clusterActive = $("#clusterActive");
+  if (clusterActive) {
+    clusterActive.textContent =
+      "● NEBIUS — " + counts.run + " active";
+  }
 }
+
 function jobRow(id,hash,status,secs){
   const d=document.createElement("div"); d.className="jobrow";
   d.innerHTML='<div class="r1"><span>JOB-'+id+'</span><span class="st-'+status+'">'+status.toUpperCase()+'</span></div>'+
