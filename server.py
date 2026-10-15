@@ -98,8 +98,15 @@ async def run(repo: str, request: Request):
             compare = os.environ.get("BISECT_COMPARE", "false").lower() == "true"
             pipeline.run_pipeline(str(path), out_dir=str(path.parent / ("bisect-output-" + repo)),
                                   workers=workers, compare=compare, on_event=on_event)
+        
         except Exception as e:
-            loop.call_soon_threadsafe(queue.put_nowait, {"type": "server_error", "error": str(e)})
+            import traceback
+            traceback.print_exc()
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": "server_error", "error": str(e)}
+            )
+
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, DONE)
 
