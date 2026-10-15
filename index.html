@@ -71,6 +71,7 @@ p.sub{color:var(--mu);font-size:18px;max-width:52ch;margin:0 auto 38px;line-heig
 .field input:focus,.field select:focus{outline:none;border-color:var(--run)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 #setup .btn{width:100%;justify-content:center;padding:16px;margin-top:10px;box-shadow:0 0 0 1px color-mix(in oklab,var(--pass) 60%,transparent),0 0 26px -6px color-mix(in oklab,var(--pass) 60%,transparent)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;filter:none}
 .foot-hint{text-align:center;color:var(--mu);font:12px var(--mono);margin-top:12px}
 
 /* ---------- dashboard ---------- */
@@ -488,7 +489,18 @@ function colorDiff(el,text){
     s.textContent=l+"\n"; el.appendChild(s);
   });
 }
-function log(text,cls){ const d=document.createElement("div"); d.className=cls||""; d.innerHTML='<span style="color:var(--pass);opacity:.6">&gt; </span>'+text; $("#tlog").appendChild(d); $("#tlog").scrollTop=$("#tlog").scrollHeight; }
+function log(text,cls){
+  const d=document.createElement("div");
+  d.className=cls||"";
+  const prefix=document.createElement("span");
+  prefix.style.color="var(--pass)";
+  prefix.style.opacity=".6";
+  prefix.textContent="> ";
+  d.appendChild(prefix);
+  d.appendChild(document.createTextNode(String(text)));
+  $("#tlog").appendChild(d);
+  $("#tlog").scrollTop=$("#tlog").scrollHeight;
+}
 
 function showApp(){ $("#landing").classList.add("hide"); $("#app").classList.remove("hide"); window.scrollTo(0,0); }
 function showDash(){ $("#setup").classList.add("hide"); $("#dash").classList.remove("hide"); }
@@ -626,7 +638,12 @@ function play(events){
 $("#goSetup").onclick=()=>{ showApp(); };
 $("#goDemo").onclick=()=>{ showApp(); showDash(); play(SAMPLE); };
 $("#startSample").onclick=()=>{ showDash(); play(window.CURRENT||SAMPLE); };
-$("#resetBtn").onclick=()=>{ if(window._liveSource) window._liveSource.close(); $("#dash").classList.add("hide"); $("#setup").classList.remove("hide"); };
+$("#resetBtn").onclick=()=>{
+  if(window._liveController) window._liveController.abort();
+  if(window._liveSource) window._liveSource.close();
+  $("#dash").classList.add("hide");
+  $("#setup").classList.remove("hide");
+};
 $("#file").onchange=e=>{
   const f=e.target.files[0]; if(!f) return;
   f.text().then(t=>{
@@ -647,14 +664,114 @@ fetch(API_BASE+"/api/repos").then(r=>r.json()).then(repos=>{
   repos.forEach(r=>{ const o=document.createElement("option"); o.value=r.id; o.textContent=r.label+(r.exists?"":" (missing on server)"); sel.appendChild(o); });
 }).catch(()=>{ $("#liveField").innerHTML='<p class="empty">No backend detected at /api/repos — open this page through server.py to run live, or use replay below.</p>'; $("#startLive").disabled=true; });
 
-function playLive(repo){
-  resetDash(); counts={run:0,pass:0,fail:0,error:0}; jobCounter=1000;
+async function playLive(repo){
+  if(window._liveRunning) return;
+
+  window._liveRunning=true;
+  const liveBtn=$("#startLive");
+  const originalLabel=liveBtn.textContent;
+  liveBtn.disabled=true;
+  liveBtn.textContent="RUNNING...";
+
+  resetDash();
+  counts={run:0,pass:0,fail:0,error:0};
+  jobCounter=1000;
   showDash();
   $("#liveHint").textContent="Connecting to the backend and starting a real run on "+repo+" ...";
-  const es = new EventSource(API_BASE+"/api/run?repo="+encodeURIComponent(repo));
-  window._liveSource = es;
-  es.onmessage = e=>{ const ev=JSON.parse(e.data); if(ev.type==="server_error"){ log("server error: "+ev.error,"bad"); es.close(); return; } handle(ev); if(ev.type==="done") es.close(); };
-  es.onerror = ()=>{ log("connection to backend lost or finished","warn"); es.close(); };
+
+  const controller=new AbortController();
+  window._liveController=controller;
+  let reader=null;
+  let gotDone=false;
+  let gotServerError=false;
+
+  function processLiveBlock(block){
+    const data=block.split(/\r?\n/)
+      .filter(line=>line.startsWith("data:"))
+      .map(line=>line.slice(5).trim())
+      .join("\n");
+    if(!data) return;
+
+    let ev;
+    try {
+      ev=JSON.parse(data);
+    } catch (_) {
+      log("Received an unreadable event from the backend.","bad");
+      return;
+    }
+
+    if(ev.type==="server_error"){
+      gotServerError=true;
+      log("Server error: "+ev.error,"bad");
+      $("#cap").textContent="The backend encountered an error.";
+      return;
+    }
+
+    handle(ev);
+    if(ev.type==="done") gotDone=true;
+  }
+
+  try {
+    const response=await fetch(
+      API_BASE+"/api/run?repo="+encodeURIComponent(repo),
+      {headers:{Accept:"text/event-stream"},signal:controller.signal}
+    );
+
+    if(!response.ok){
+      let message="Request failed (HTTP "+response.status+").";
+      try {
+        const body=await response.json();
+        if(body.detail) message=body.detail;
+      } catch (_) {}
+
+      if(response.status===429){
+        log("Rate limited: "+message,"warn");
+        $("#cap").textContent=message;
+        $("#liveHint").textContent=message;
+      } else {
+        log("Backend error: "+message,"bad");
+        $("#cap").textContent="The investigation could not start.";
+        $("#liveHint").textContent=message;
+      }
+      return;
+    }
+
+    if(!response.body) throw new Error("This browser does not support response streaming.");
+    reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer="";
+
+    while(true){
+      const {value,done}=await reader.read();
+      if(done) break;
+      buffer+=decoder.decode(value,{stream:true});
+      const blocks=buffer.split(/\r?\n\r?\n/);
+      buffer=blocks.pop()||"";
+      for(const block of blocks) processLiveBlock(block);
+    }
+
+    buffer+=decoder.decode();
+    if(buffer.trim()) processLiveBlock(buffer);
+
+    if(!gotDone && !gotServerError && !controller.signal.aborted){
+      log("The connection ended before the investigation completed.","warn");
+      $("#cap").textContent="Investigation ended unexpectedly.";
+    }
+  } catch(error) {
+    if(error.name!=="AbortError"){
+      log("Live run failed: "+error.message,"bad");
+      $("#cap").textContent="Could not complete the live investigation.";
+      $("#liveHint").textContent=error.message;
+    }
+  } finally {
+    if(reader){
+      try { await reader.cancel(); } catch (_) {}
+    }
+    if(window._liveController===controller) window._liveController=null;
+    window._liveRunning=false;
+    liveBtn.disabled=false;
+    liveBtn.textContent=originalLabel;
+  }
 }
 $("#startLive").onclick=()=>{ const r=$("#liveRepo").value; if(!r){ $("#liveHint").textContent="Pick a repo first."; return; } playLive(r); };
 $("#copyBtn").onclick=()=>{ navigator.clipboard?.writeText($("#patch").textContent).then(()=>{ $("#copyBtn").textContent="COPIED ✓"; setTimeout(()=>$("#copyBtn").textContent="COPY PATCH",1400); }); };
